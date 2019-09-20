@@ -51,17 +51,6 @@
                (println "Error reading file"))))))
 (print-file-content proj-file)
 
-;; manifold.deferred offers callback support, but do you really want to use it ?
-
-(def d (let [d (d/deferred)]
-         (d/on-realized d
-                        (fn completed [v]
-                          (println v))
-                        (fn failed [e]
-                          (println "Error: " e)))
-         d))
-
-(d/success! d :some-value)
 
 ;; ## Clojure **promise**
 

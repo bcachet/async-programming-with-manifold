@@ -2908,16 +2908,7 @@ net.brehaut.ClojureTools = (function (SH) {
              (failed [e attachment]
                (.close channel)
                (println &quot;Error reading file&quot;))))))
-(print-file-content proj-file)</pre></td></tr><tr><td class="docs"><p>manifold.deferred offers callback support, but do you really want to use it ?</p>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(def d (let [d (d/deferred)]
-         (d/on-realized d
-                        (fn completed [v]
-                          (println v))
-                        (fn failed [e]
-                          (println &quot;Error: &quot; e)))
-         d))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(d/success! d :some-value)</pre></td></tr><tr><td class="docs"><h2>Clojure **promise**</h2>
+(print-file-content proj-file)</pre></td></tr><tr><td class="docs"><h2>Clojure **promise**</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Promise is an object that will contain a value someday</p>
 
 <p>  Value is delivered once into promise (via <em>deliver</em>)</p>
