@@ -2998,9 +2998,31 @@ before moving to next step</p>
 </td><td class="codes"><pre class="brush: clojure">@(d/chain (read-file-async proj-file)
           -&gt;str
           clojure.string/upper-case
-          put-echo
+          ;; put-echo
           :status)</pre></td></tr><tr><td class="docs"><h3>Error handling</h3>
-</td><td class="codes"></td></tr><tr><td class="docs"><h3>Define executors</h3>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A <code>manifold.deferred</code> can represent both success (<code>d/success-deferred</code>) and error (<code>d/error-deferred</code>)
+When derefing a <code>d/error-deferred</code>, an exception will be thrown with associated value</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(comment
+  @(-&gt; (d/success-deferred :starting-nicely)
+       (d/chain (constantly (d/error-deferred :booooom))))
+
+  )</pre></td></tr><tr><td class="docs"><p>In a <code>d/chain</code>, if a step throw, it is catched and wrap into a <code>d/error-deferred</code></p>
+</td><td class="codes"><pre class="brush: clojure">(comment
+  @(-&gt; (d/success-deferred :starting-nicely)
+       (d/chain (fn [_] (throw (ex-info :booooom {})))))
+  )</pre></td></tr><tr><td class="docs"><p>Once a step is in <em>error</em>, following steps in a <code>d/chain</code> will be skipped</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(comment
+  @(-&gt; (d/success-deferred :starting-nicely)
+       (d/chain
+        (constantly (d/error-deferred :booooom))
+        (constantly :never-reached)))
+  )</pre></td></tr><tr><td class="docs"><p>We can catch any error to perform any recovery</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">@(-&gt; (d/success-deferred :starting-nicely)
+     (d/chain (constantly (d/error-deferred :booooom)))
+     (d/catch (fn error-handling [e] {:state :recovered :error e})))</pre></td></tr><tr><td class="docs"><h3>Define executors</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Transducer support</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Don't</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>When to deref ?</h3>

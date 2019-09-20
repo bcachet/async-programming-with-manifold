@@ -177,7 +177,7 @@
 @(d/chain (read-file-async proj-file)
           ->str
           clojure.string/upper-case
-          put-echo
+          ;; put-echo
           :status)
 
 ;; ### Error handling
@@ -185,12 +185,34 @@
 ;; A `manifold.deferred` can represent both success (`d/success-deferred`) and error (`d/error-deferred`)
 ;; When derefing a `d/error-deferred`, an exception will be thrown with associated value
 
-;; In a `d/chain`, if a step throw, it is catched and wrap into a `d/error-deferred`
+(comment
+  @(-> (d/success-deferred :starting-nicely)
+       (d/chain (constantly (d/error-deferred :booooom))))
+
+  )
+
+;; In a `d/chain`, if a step throw an exception, it is catched and wrap into a `d/error-deferred`
+(comment
+  @(-> (d/success-deferred :starting-nicely)
+       (d/chain (fn [_] (throw (ex-info "boooom" {})))))
+  )
 
 ;; Once a step is in *error*, following steps in a `d/chain` will be skipped
 
-@(d/chain (read-file-async proj-file)
-          (fn [_] (d/error-deferred :booooom)))
+(comment
+  @(-> (d/success-deferred :starting-nicely)
+       (d/chain
+        (constantly (d/error-deferred :booooom))
+        (constantly :never-reached)))
+  )
+
+;; We can catch error to perform any recovery
+
+@(-> (d/success-deferred :starting-nicely)
+     (d/chain (constantly (d/error-deferred :booooom))
+              (constantly :never-reached))
+     (d/catch (fn error-handling [e] {:state :recovered :error e})))
+
 
 ;; ### Define executors
 
