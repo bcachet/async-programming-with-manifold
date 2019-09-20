@@ -16,15 +16,17 @@
 (defn ->str [^ByteBuffer bb]
   (-> bb .array String.))
 
-;; # Async Programming
-
-;; ## Callback
-
 (def proj-file "/home/bertrand/Desktop/async_programming/project.clj")
 
 (def read-only (into-array OpenOption [StandardOpenOption/READ]))
 
 (def executor (fixed-thread-executor 42))
+
+
+;; # Async Programming
+
+;; ## Callback
+
 
 (defn print-file-content
   "We define what to do on operation completion via **callbacks**
