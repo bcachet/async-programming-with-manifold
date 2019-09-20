@@ -140,7 +140,6 @@
 ;; `manifold.deferred/chain` allows us to compose operations to define
 ;; workflow/pipeline
 
-()
 
 @(-> (d/future (read-file "not-existing-file"))
      (d/onto executor)
