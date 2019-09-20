@@ -139,6 +139,8 @@
 ;; sequence
 
 ;; This make API hard to use for single async operations
+
+
 (->> [(a/go
         @(read-file-async proj-file))] ; wrap operation in `vect`
      (a/map ->str)
@@ -153,29 +155,42 @@
 ;; `manifold.deferred/chain` allows us to compose operations to define
 ;; workflow/pipeline
 
-(defn ->stream [d]
+(defn ->stream
+  ""
+  [d]
   (let [s (s/stream)]
     (s/put! s d)
     (s/close! s)
     s))
 
-(defn put-echo [s]
+(defn put-echo
+  "PUT data to postman-echo
+
+  Response returned in a `manifold.deferred`"
+  [s]
   (http/put "http://postman-echo.com/put" {:body (->stream s)}))
 
-;; We can define our complete pipeline and await for its completion
-;; We can define executor to use
-@(-> (read-file-async proj-file)
-     (d/chain
-      ->str
-      put-echo
-      :status
-      )
-     (d/onto executor)
-     (d/catch Exception (fn [e]
-                          {:error e})))
-
+;; We can define our complete pipeline.
+;; If one of the step return a `manifold.deferred`,
+;; `manifold.deferred/chain` will wait a value is delivered
+;; before moving to next step
+@(d/chain (read-file-async proj-file)
+          ->str
+          clojure.string/upper-case
+          put-echo
+          :status)
 
 ;; ### Error handling
+
+;; A `manifold.deferred` can represent both success (`d/success-deferred`) and error (`d/error-deferred`)
+;; When derefing a `d/error-deferred`, an exception will be thrown with associated value
+
+;; In a `d/chain`, if a step throw, it is catched and wrap into a `d/error-deferred`
+
+;; Once a step is in *error*, following steps in a `d/chain` will be skipped
+
+@(d/chain (read-file-async proj-file)
+          (fn [_] (d/error-deferred :booooom)))
 
 ;; ### Define executors
 
@@ -183,6 +198,7 @@
 
 ;; ### Don't
 
+;; ### When to deref ?
 
 ;; ## Usage example
 
