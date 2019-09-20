@@ -1,7 +1,9 @@
 (ns async-programming.core
   (:require
    [manifold.deferred :as d]
+   [manifold.stream :as s]
    [manifold.executor :refer [fixed-thread-executor]]
+   [aleph.http :as http]
    [clojure.java.io :refer [as-file reader]]
    [clojure.core.async :as a])
   (:import
@@ -25,6 +27,18 @@
 
 ;; # Async Programming
 
+;; ## Why using async programming
+
+;; CPU/Threads resources are limited
+
+;; We do a lot of IO operations (handling HTTP requests, DB access)
+;; that can be handled by Asynchronous calls on the JVM (Netty for example)
+
+;; => We will be notified once data received/sent
+
+;; => No need to block a thread to await the result
+
+
 ;; ## Callback
 
 
@@ -33,6 +47,8 @@
 
   Nothing returned to represent the operation =>
   transformation on the result occurs in the callback
+
+  CPU used only when Callback is called
 
   When we need to perform another async task, we will nest
   callbacks together => **callbacks hell**"
@@ -49,12 +65,17 @@
              (failed [e attachment]
                (.close channel)
                (println "Error reading file"))))))
+
+;; We have no information about status of operation and when it finishes
+;; But we block no threads to wait any result
+
 (print-file-content proj-file)
 
 
 ;; ## Clojure **promise**
 
-(defn read-file
+
+(defn read-file-async
   "Promise is an object that will contain a value someday
 
   Value is delivered once into promise (via *deliver*)
@@ -63,8 +84,9 @@
 
   Promise doest not start a new thread
 
-  In Java Promise refers to Future
-  "
+  Promise can be used in a `manifold.deferred/chain` workflow
+
+  In Java Promise refers to Future"
   [file]
   (let [path    (-> file as-file .toPath)
         channel (AsynchronousFileChannel/open path read-only)
@@ -81,14 +103,13 @@
                (deliver p nil))))
     p))
 
-;; Clojure **promise** can be used in a `manifold.deferred/chain` workflow
+;; We only use one thread to await async task to finish
+(->str @(read-file-async proj-file))
 
-(-> (read-file proj-file)
-    deref
-    ->str)
 
 
 ;; ## Future
+
 
 (defn read-file
   "Future is an object that represent an operation performed on another thread
@@ -99,28 +120,31 @@
   "
   [file]
   (let [path    (-> file as-file .toPath)
-        channel (FileChannel/open path (into-array OpenOption [StandardOpenOption/READ]))
+        channel (FileChannel/open path read-only)
         buffer  (ByteBuffer/allocate (.size channel))]
     (.read channel buffer)
     (.flip buffer)))
 
-;; Waiting for a better Future
-@(future (read-file proj-file))
+;; This operation will block 2 threads, the one created with `future` (the .read operation is synchronous)
+;; and the current thread from which we call the `@/deref`
+(->str @(future (read-file proj-file)))
+
 
 ;; ## Why using Manifold
 
 ;; There are several libraries to deal with async programming in Clojure
 ;; `clojure.core.async`, `promesa`, `manifold`
 
-;; `clojure.core.async`, there is all you need but API is hard to use
-;; Do you really want to compose this way ?
+;; `clojure.core.async` only offers *Go* channels => everything is a
+;; sequence
 
-(->> [(a/go (read-file proj-file))]
+;; This make API hard to use for single async operations
+(->> [(a/go
+        @(read-file-async proj-file))] ; wrap operation in `vect`
      (a/map ->str)
      (a/<!!))
 
-
-;; We use `Aleph` as our HTTP server and it already comes with `manifold`
+;; We use `Aleph` as our HTTP server and it already comes with `manifold`.
 ;; No reason not to use it
 
 
@@ -129,12 +153,26 @@
 ;; `manifold.deferred/chain` allows us to compose operations to define
 ;; workflow/pipeline
 
+(defn ->stream [d]
+  (let [s (s/stream)]
+    (s/put! s d)
+    (s/close! s)
+    s))
 
-@(-> (d/future (read-file "not-existing-file"))
+(defn put-echo [s]
+  (http/put "http://postman-echo.com/put" {:body (->stream s)}))
+
+;; We can define our complete pipeline and await for its completion
+;; We can define executor to use
+@(-> (read-file-async proj-file)
+     (d/chain
+      ->str
+      put-echo
+      :status
+      )
      (d/onto executor)
-     (d/chain ->str)
      (d/catch Exception (fn [e]
-                          (println "Error" e))))
+                          {:error e})))
 
 
 ;; ### Error handling
@@ -143,7 +181,10 @@
 
 ;; ### Transducer support
 
-
+;; ### Don't
 
 
 ;; ## Usage example
+
+
+;; ## Reactor: Observable

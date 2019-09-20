@@ -2866,11 +2866,13 @@ net.brehaut.ClojureTools = (function (SH) {
   };
 })(SyntaxHighlighter);
 </script><title>async-programming -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name">async-programming</h1><h2 class="project-version">0.1.0</h2><br />
-</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">manifold</td><td class="dotted"><hr /></td><td class="dep-version">0.1.8</td></tr><tr><td class="dep-name">org.clojure/core.async</td><td class="dotted"><hr /></td><td class="dep-version">0.4.500</td></tr><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.10.0</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#async-programming.core">async-programming.core</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#async-programming.core" name="async-programming.core"><h1 class="project-name">async-programming.core</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
+</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">manifold</td><td class="dotted"><hr /></td><td class="dep-version">0.1.8</td></tr><tr><td class="dep-name">aleph</td><td class="dotted"><hr /></td><td class="dep-version">0.4.6</td></tr><tr><td class="dep-name">org.clojure/core.async</td><td class="dotted"><hr /></td><td class="dep-version">0.4.500</td></tr><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.10.0</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#async-programming.core">async-programming.core</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#async-programming.core" name="async-programming.core"><h1 class="project-name">async-programming.core</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns async-programming.core
   (:require
    [manifold.deferred :as d]
+   [manifold.stream :as s]
    [manifold.executor :refer [fixed-thread-executor]]
+   [aleph.http :as http]
    [clojure.java.io :refer [as-file reader]]
    [clojure.core.async :as a])
   (:import
@@ -2886,11 +2888,19 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(def proj-file &quot;/home/bertrand/Desktop/async_programming/project.clj&quot;)</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(def read-only (into-array OpenOption [StandardOpenOption/READ]))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(def executor (fixed-thread-executor 42))</pre></td></tr><tr><td class="docs"><h1>Async Programming</h1>
+</td><td class="codes"></td></tr><tr><td class="docs"><h2>Why using async programming</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>CPU/Threads resources are limited</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>We do a lot of IO operations (handling HTTP requests, DB access)
+that can be handled by Asynchronous calls on the JVM (Netty for example)</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>=> We will be notified once data received/sent</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>=> No need to block a thread to await the result</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Callback</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>We define what to do on operation completion via <strong>callbacks</strong></p>
 
 <p>  Nothing returned to represent the operation =>
   transformation on the result occurs in the callback</p>
+
+<p>  CPU used only when Callback is called</p>
 
 <p>  When we need to perform another async task, we will nest
   callbacks together => <strong>callbacks hell</strong></p>
@@ -2907,8 +2917,10 @@ net.brehaut.ClojureTools = (function (SH) {
                (println (-&gt;str buffer)))
              (failed [e attachment]
                (.close channel)
-               (println &quot;Error reading file&quot;))))))
-(print-file-content proj-file)</pre></td></tr><tr><td class="docs"><h2>Clojure **promise**</h2>
+               (println &quot;Error reading file&quot;))))))</pre></td></tr><tr><td class="docs"><p>We have no information about status of operation and when it finishes
+But we block no threads to wait any result</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(print-file-content proj-file)</pre></td></tr><tr><td class="docs"><h2>Clojure **promise**</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Promise is an object that will contain a value someday</p>
 
 <p>  Value is delivered once into promise (via <em>deliver</em>)</p>
@@ -2917,8 +2929,10 @@ net.brehaut.ClojureTools = (function (SH) {
 
 <p>  Promise doest not start a new thread</p>
 
+<p>  Promise can be used in a <code>manifold.deferred/chain</code> workflow</p>
+
 <p>  In Java Promise refers to Future</p>
-</td><td class="codes"><pre class="brush: clojure">(defn read-file
+</td><td class="codes"><pre class="brush: clojure">(defn read-file-async
   [file]
   (let [path    (-&gt; file as-file .toPath)
         channel (AsynchronousFileChannel/open path read-only)
@@ -2933,11 +2947,8 @@ net.brehaut.ClojureTools = (function (SH) {
              (failed [this e attachment]
                (.close channel)
                (deliver p nil))))
-    p))</pre></td></tr><tr><td class="docs"><p>Clojure <strong>promise</strong> can be used in a <code>manifold.deferred/chain</code> workflow</p>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(-&gt; (read-file proj-file)
-    deref
-    -&gt;str)</pre></td></tr><tr><td class="docs"><h2>Future</h2>
+    p))</pre></td></tr><tr><td class="docs"><p>We only use one thread to await async task to finish</p>
+</td><td class="codes"><pre class="brush: clojure">(-&gt;str @(read-file-async proj-file))</pre></td></tr><tr><td class="docs"><h2>Future</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Future is an object that represent an operation performed on another thread</p>
 
 <p>  Operation result can be retrieved via <em>deref</em>. The call will block until value delivered</p>
@@ -2946,19 +2957,21 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(defn read-file
   [file]
   (let [path    (-&gt; file as-file .toPath)
-        channel (FileChannel/open path (into-array OpenOption [StandardOpenOption/READ]))
+        channel (FileChannel/open path read-only)
         buffer  (ByteBuffer/allocate (.size channel))]
     (.read channel buffer)
-    (.flip buffer)))</pre></td></tr><tr><td class="docs"><p>Waiting for a better Future</p>
-</td><td class="codes"><pre class="brush: clojure">@(future (read-file proj-file))</pre></td></tr><tr><td class="docs"><h2>Why using Manifold</h2>
+    (.flip buffer)))</pre></td></tr><tr><td class="docs"><p>This operation will block 2 threads, the one created with <code>future</code> (the .read operation is synchronous)
+and the current thread from which we call the <code>@/deref</code></p>
+</td><td class="codes"><pre class="brush: clojure">(-&gt;str @(future (read-file proj-file)))</pre></td></tr><tr><td class="docs"><h2>Why using Manifold</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>There are several libraries to deal with async programming in Clojure
 <code>clojure.core.async</code>, <code>promesa</code>, <code>manifold</code></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p><code>clojure.core.async</code>, there is all you need but API is hard to use
-Do you really want to compose this way ?</p>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(-&gt;&gt; [(a/go (read-file proj-file))]
+</td><td class="codes"></td></tr><tr><td class="docs"><p><code>clojure.core.async</code> only offers <em>Go</em> channels => everything is a
+sequence</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>This make API hard to use for single async operations</p>
+</td><td class="codes"><pre class="brush: clojure">(-&gt;&gt; [(a/go
+        @(read-file-async proj-file))] ; wrap operation in `vect`
      (a/map -&gt;str)
-     (a/&lt;!!))</pre></td></tr><tr><td class="docs"><p>We use <code>Aleph</code> as our HTTP server and it already comes with <code>manifold</code>
+     (a/&lt;!!))</pre></td></tr><tr><td class="docs"><p>We use <code>Aleph</code> as our HTTP server and it already comes with <code>manifold</code>.
 No reason not to use it</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Manifold</h2>
 
@@ -2967,14 +2980,28 @@ No reason not to use it</p>
 <p><code>manifold.deferred/chain</code> allows us to compose operations to define
 workflow/pipeline</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">@(-&gt; (d/future (read-file &quot;not-existing-file&quot;))
+</td><td class="codes"><pre class="brush: clojure">(defn -&gt;stream [d]
+  (let [s (s/stream)]
+    (s/put! s d)
+    (s/close! s)
+    s))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn put-echo [s]
+  (http/put &quot;http://postman-echo.com/put&quot; {:body (-&gt;stream s)}))</pre></td></tr><tr><td class="docs"><p>We can define our complete pipeline and await for its completion
+We can define executor to use</p>
+</td><td class="codes"><pre class="brush: clojure">@(-&gt; (read-file-async proj-file)
+     (d/chain
+      -&gt;str
+      put-echo
+      :status
+      )
      (d/onto executor)
-     (d/chain -&gt;str)
      (d/catch Exception (fn [e]
-                          (println &quot;Error&quot; e))))</pre></td></tr><tr><td class="docs"><h3>Error handling</h3>
+                          {:error e})))</pre></td></tr><tr><td class="docs"><h3>Error handling</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Define executors</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Transducer support</h3>
+</td><td class="codes"></td></tr><tr><td class="docs"><h3>Don't</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Usage example</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><h2>Reactor: Observable</h2>
 </td><td class="codes"></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_async-programming.core">async-programming.core</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
 SyntaxHighlighter.all();
 
