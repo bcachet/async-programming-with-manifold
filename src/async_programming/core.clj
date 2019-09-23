@@ -22,9 +22,6 @@
 
 (def read-only (into-array OpenOption [StandardOpenOption/READ]))
 
-(def executor (fixed-thread-executor 42))
-
-
 ;; # Async Programming
 
 ;; ## Why using async programming
@@ -32,15 +29,21 @@
 ;; CPU/Threads resources are limited
 
 ;; We do a lot of IO operations (handling HTTP requests, DB access)
-;; that can be handled by Asynchronous calls on the JVM (Netty for example)
+;; that can be handled by asynchronous calls on the JVM (Netty for example)
 
 ;; => We will be notified once data received/sent
 
-;; => No need to block a thread to await the result
+;; => No need to block a thread to await operation's result
+
+;; => We are not talking about parallel programming.
+
+;; Well defined async programming, do not use too many threads or at least do not block too many of them.
 
 
-;; ## Callback
 
+;; ## Async programming approaches
+
+;; ### Callback
 
 (defn print-file-content
   "We define what to do on operation completion via **callbacks**
@@ -66,13 +69,13 @@
                (.close channel)
                (println "Error reading file"))))))
 
-;; We have no information about status of operation and when it finishes
+;; We have no information about status of operation and when it finishes.
 ;; But we block no threads to wait any result
 
 (print-file-content proj-file)
 
 
-;; ## Clojure **promise**
+;; ### Promise
 
 
 (defn read-file-async
@@ -85,6 +88,8 @@
   Promise doest not start a new thread
 
   Promise can be used in a `manifold.deferred/chain` workflow
+
+  `d/deferred` can be used as a `promise`. We can `deliver` on a `d/deferred`
 
   In Java Promise refers to Future"
   [file]
@@ -104,11 +109,10 @@
     p))
 
 ;; We only use one thread to await async task to finish
-(->str @(read-file-async proj-file))
+(->str @(read-file-async proj-file)) ; => "(defproject ....
 
 
-
-;; ## Future
+;; ### Future
 
 
 (defn read-file
@@ -117,6 +121,8 @@
   Operation result can be retrieved via *deref*. The call will block until value delivered
 
   Nice way to convert *synchronous*/*blocking* code to *asynchronous*/*not blocking*
+
+  `d/future` can be used instead of `future`
   "
   [file]
   (let [path    (-> file as-file .toPath)
@@ -127,7 +133,7 @@
 
 ;; This operation will block 2 threads, the one created with `future` (the .read operation is synchronous)
 ;; and the current thread from which we call the `@/deref`
-(->str @(future (read-file proj-file)))
+(->str @(future (read-file proj-file))) ; => "(defproject ...
 
 
 ;; ## Why using Manifold
@@ -144,15 +150,49 @@
 (->> [(a/go
         @(read-file-async proj-file))] ; wrap operation in `vect`
      (a/map ->str)
-     (a/<!!))
+     (a/<!!)) ; => "(defproject ...
 
 ;; We use `Aleph` as our HTTP server and it already comes with `manifold`.
 ;; No reason not to use it
 
 
+
 ;; ## Manifold
+
+;; ### Manifold.deferred, Promise and Future
+
+;; `d/deferred` can be used as Clojure `promise` (we can `deliver` on a `d/deferred`)
+;; and `d/future` is a direct replacement of `future`
+
+(let [p (d/deferred)]
+  (deliver p :some-value)
+  (deliver p :another-value)
+  (repeatedly 2 #(deref p))
+  ) ; => (:some-value :some-value)
+
+
+;; We should always use `manifold` version because `promise`/`future` use blocking
+;; dereference => Manifold allocated thread to treat them as asynchronous deferred.
+
+(defn read-file-async
+  [file]
+  (let [path    (-> file as-file .toPath)
+        channel (AsynchronousFileChannel/open path read-only)
+        buffer  (ByteBuffer/allocate (.size channel))
+        p       (d/deferred)]
+    (.read channel buffer 0 nil
+           (reify CompletionHandler
+             (completed [this result attachment]
+               (.close channel)
+               (.flip buffer)
+               (d/success! p buffer))
+             (failed [this e attachment]
+               (.close channel)
+               (d/error! p nil))))
+    p))
+
 ;; ### Composition
-;; `manifold.deferred/chain` allows us to compose operations to define
+;; `d/chain` allows us to compose operations to define
 ;; workflow/pipeline
 
 (defn ->stream
@@ -178,7 +218,7 @@
           ->str
           clojure.string/upper-case
           ;; put-echo
-          :status)
+          :status) ; => 200
 
 ;; ### Error handling
 
@@ -187,14 +227,14 @@
 
 (comment
   @(-> (d/success-deferred :starting-nicely)
-       (d/chain (constantly (d/error-deferred :booooom))))
+       (d/chain (constantly (d/error-deferred :booooom)))) ; => ExceptionInfo {:error :boooom}
 
   )
 
 ;; In a `d/chain`, if a step throw an exception, it is catched and wrap into a `d/error-deferred`
 (comment
   @(-> (d/success-deferred :starting-nicely)
-       (d/chain (fn [_] (throw (ex-info "boooom" {})))))
+       (d/chain (fn [_] (throw (ex-info "boooom" {}))))) ; => ExceptionInfo {:error :boooom}
   )
 
 ;; Once a step is in *error*, following steps in a `d/chain` will be skipped
@@ -203,7 +243,7 @@
   @(-> (d/success-deferred :starting-nicely)
        (d/chain
         (constantly (d/error-deferred :booooom))
-        (constantly :never-reached)))
+        (constantly :never-reached))) ; => ExceptionInfo {:error :booooom}
   )
 
 ;; We can catch error to perform any recovery
@@ -211,18 +251,59 @@
 @(-> (d/success-deferred :starting-nicely)
      (d/chain (constantly (d/error-deferred :booooom))
               (constantly :never-reached))
-     (d/catch (fn error-handling [e] {:state :recovered :error e})))
+     (d/catch (fn error-handling [e] {:state :recovered :error e}))) ; => {:state :recovered :error :booooom}
 
 
-;; ### Define executors
+
+;; ## Manifold Streams
+
+;; A `s/stream` can be seen as a `a/channel`.
+
+;; We can `s/put!`, `s/take!` messages until stream is closed via `s/close!`
+
+(let [s (s/stream)]
+  (doall (map #(s/put! s %) (range 5)))
+  (s/close! s)
+  (repeatedly 6 #(deref (s/take! s))))
+
+;; 
+
 
 ;; ### Transducer support
+
+;; *transducer* are really nice to express operation that do not depend on the messaging system.
+;; We can use same *transducer* on top of `a/channel` or `s/stream`
+
+;; `s/transform` apply a *transducer* to a stream
+
 
 ;; ### Don't
 
 ;; ### When to deref ?
 
+;; Deref means waiting for task to finish => we block a thread.
+
+;; For example, `alpeh` response body or `aleph.http/post`/`aleph.http/put` can be a `s/stream`
+;; => if we wrap our operation into a `s/stream` we block no thread to await our workflow to finish
+
+
 ;; ## Usage example
+
+
+;; ### Define executors
+
+(def executor (fixed-thread-executor 42))
+
+;; Manifold use same thread from which `d/deferred` is created.
+
+;; Manifold use same thread-pool from which thread creating `d/future` is created
+
+;; We can enforce thread pool to use via `d/onto`
+
+(-> (read-file-async proj-file)
+    (d/onto executor)
+    (d/chain ->str)
+    )
 
 
 ;; ## Reactor: Observable

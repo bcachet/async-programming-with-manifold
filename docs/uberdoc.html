@@ -2886,15 +2886,17 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(defn -&gt;str [^ByteBuffer bb]
   (-&gt; bb .array String.))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(def proj-file &quot;/home/bertrand/Desktop/async_programming/project.clj&quot;)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(def read-only (into-array OpenOption [StandardOpenOption/READ]))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(def executor (fixed-thread-executor 42))</pre></td></tr><tr><td class="docs"><h1>Async Programming</h1>
+</td><td class="codes"><pre class="brush: clojure">(def read-only (into-array OpenOption [StandardOpenOption/READ]))</pre></td></tr><tr><td class="docs"><h1>Async Programming</h1>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Why using async programming</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>CPU/Threads resources are limited</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>We do a lot of IO operations (handling HTTP requests, DB access)
-that can be handled by Asynchronous calls on the JVM (Netty for example)</p>
+that can be handled by asynchronous calls on the JVM (Netty for example)</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>=> We will be notified once data received/sent</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>=> No need to block a thread to await the result</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><h2>Callback</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>=> No need to block a thread to await operation's result</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>=> We are not talking about parallel programming.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Well defined async programming, do not use too many threads or at least do not block too many of them.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><h2>Async programming approaches</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><h3>Callback</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>We define what to do on operation completion via <strong>callbacks</strong></p>
 
 <p>  Nothing returned to represent the operation =>
@@ -2917,10 +2919,10 @@ that can be handled by Asynchronous calls on the JVM (Netty for example)</p>
                (println (-&gt;str buffer)))
              (failed [e attachment]
                (.close channel)
-               (println &quot;Error reading file&quot;))))))</pre></td></tr><tr><td class="docs"><p>We have no information about status of operation and when it finishes
+               (println &quot;Error reading file&quot;))))))</pre></td></tr><tr><td class="docs"><p>We have no information about status of operation and when it finishes.
 But we block no threads to wait any result</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(print-file-content proj-file)</pre></td></tr><tr><td class="docs"><h2>Clojure **promise**</h2>
+</td><td class="codes"><pre class="brush: clojure">(print-file-content proj-file)</pre></td></tr><tr><td class="docs"><h3>Promise</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Promise is an object that will contain a value someday</p>
 
 <p>  Value is delivered once into promise (via <em>deliver</em>)</p>
@@ -2930,6 +2932,8 @@ But we block no threads to wait any result</p>
 <p>  Promise doest not start a new thread</p>
 
 <p>  Promise can be used in a <code>manifold.deferred/chain</code> workflow</p>
+
+<p>  <code>d/deferred</code> can be used as a <code>promise</code>. We can <code>deliver</code> on a <code>d/deferred</code></p>
 
 <p>  In Java Promise refers to Future</p>
 </td><td class="codes"><pre class="brush: clojure">(defn read-file-async
@@ -2948,12 +2952,14 @@ But we block no threads to wait any result</p>
                (.close channel)
                (deliver p nil))))
     p))</pre></td></tr><tr><td class="docs"><p>We only use one thread to await async task to finish</p>
-</td><td class="codes"><pre class="brush: clojure">(-&gt;str @(read-file-async proj-file))</pre></td></tr><tr><td class="docs"><h2>Future</h2>
+</td><td class="codes"><pre class="brush: clojure">(-&gt;str @(read-file-async proj-file)) ; =&gt; &quot;(defproject ....</pre></td></tr><tr><td class="docs"><h3>Future</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Future is an object that represent an operation performed on another thread</p>
 
 <p>  Operation result can be retrieved via <em>deref</em>. The call will block until value delivered</p>
 
 <p>  Nice way to convert <em>synchronous</em>/<em>blocking</em> code to <em>asynchronous</em>/<em>not blocking</em></p>
+
+<p>  <code>d/future</code> can be used instead of <code>future</code></p>
 </td><td class="codes"><pre class="brush: clojure">(defn read-file
   [file]
   (let [path    (-&gt; file as-file .toPath)
@@ -2962,7 +2968,7 @@ But we block no threads to wait any result</p>
     (.read channel buffer)
     (.flip buffer)))</pre></td></tr><tr><td class="docs"><p>This operation will block 2 threads, the one created with <code>future</code> (the .read operation is synchronous)
 and the current thread from which we call the <code>@/deref</code></p>
-</td><td class="codes"><pre class="brush: clojure">(-&gt;str @(future (read-file proj-file)))</pre></td></tr><tr><td class="docs"><h2>Why using Manifold</h2>
+</td><td class="codes"><pre class="brush: clojure">(-&gt;str @(future (read-file proj-file))) ; =&gt; &quot;(defproject ...</pre></td></tr><tr><td class="docs"><h2>Why using Manifold</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>There are several libraries to deal with async programming in Clojure
 <code>clojure.core.async</code>, <code>promesa</code>, <code>manifold</code></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p><code>clojure.core.async</code> only offers <em>Go</em> channels => everything is a
@@ -2972,13 +2978,38 @@ sequence</p>
 </td><td class="codes"><pre class="brush: clojure">(-&gt;&gt; [(a/go
         @(read-file-async proj-file))] ; wrap operation in `vect`
      (a/map -&gt;str)
-     (a/&lt;!!))</pre></td></tr><tr><td class="docs"><p>We use <code>Aleph</code> as our HTTP server and it already comes with <code>manifold</code>.
+     (a/&lt;!!)) ; =&gt; &quot;(defproject ...</pre></td></tr><tr><td class="docs"><p>We use <code>Aleph</code> as our HTTP server and it already comes with <code>manifold</code>.
 No reason not to use it</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Manifold</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><h3>Manifold.deferred, Promise and Future</h3>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><code>d/deferred</code> can be used as Clojure <code>promise</code> (we can <code>deliver</code> on a <code>d/deferred</code>)
+and <code>d/future</code> is a direct replacement of <code>future</code></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>We should always use <code>manifold</code> version because <code>promise</code>/<code>future</code> use blocking
+dereference => Manifold allocated thread to treat them as asynchronous deferred.</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(let [p (d/deferred)]
+  (deliver p :some-value)
+  (deliver p :another-value)
+  (repeatedly 2 #(deref p))
+  ) ; =&gt; (:some-value :some-value)</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn read-file-async
+  [file]
+  (let [path    (-&gt; file as-file .toPath)
+        channel (AsynchronousFileChannel/open path read-only)
+        buffer  (ByteBuffer/allocate (.size channel))
+        p       (d/deferred)]
+    (.read channel buffer 0 nil
+           (reify CompletionHandler
+             (completed [this result attachment]
+               (.close channel)
+               (.flip buffer)
+               (d/success! p buffer))
+             (failed [this e attachment]
+               (.close channel)
+               (d/error! p nil))))
+    p))</pre></td></tr><tr><td class="docs"><h3>Composition</h3>
 
-<h3>Composition</h3>
-
-<p><code>manifold.deferred/chain</code> allows us to compose operations to define
+<p><code>d/chain</code> allows us to compose operations to define
 workflow/pipeline</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn -&gt;stream
@@ -2999,33 +3030,56 @@ before moving to next step</p>
           -&gt;str
           clojure.string/upper-case
           ;; put-echo
-          :status)</pre></td></tr><tr><td class="docs"><h3>Error handling</h3>
+          :status) ; =&gt; 200</pre></td></tr><tr><td class="docs"><h3>Error handling</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>A <code>manifold.deferred</code> can represent both success (<code>d/success-deferred</code>) and error (<code>d/error-deferred</code>)
 When derefing a <code>d/error-deferred</code>, an exception will be thrown with associated value</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(comment
   @(-&gt; (d/success-deferred :starting-nicely)
-       (d/chain (constantly (d/error-deferred :booooom))))
+       (d/chain (constantly (d/error-deferred :booooom)))) ; =&gt; ExceptionInfo {:error :boooom}
 
-  )</pre></td></tr><tr><td class="docs"><p>In a <code>d/chain</code>, if a step throw, it is catched and wrap into a <code>d/error-deferred</code></p>
+  )</pre></td></tr><tr><td class="docs"><p>In a <code>d/chain</code>, if a step throw an exception, it is catched and wrap into a <code>d/error-deferred</code></p>
 </td><td class="codes"><pre class="brush: clojure">(comment
   @(-&gt; (d/success-deferred :starting-nicely)
-       (d/chain (fn [_] (throw (ex-info :booooom {})))))
+       (d/chain (fn [_] (throw (ex-info &quot;boooom&quot; {}))))) ; =&gt; ExceptionInfo {:error :boooom}
   )</pre></td></tr><tr><td class="docs"><p>Once a step is in <em>error</em>, following steps in a <code>d/chain</code> will be skipped</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(comment
   @(-&gt; (d/success-deferred :starting-nicely)
        (d/chain
         (constantly (d/error-deferred :booooom))
-        (constantly :never-reached)))
-  )</pre></td></tr><tr><td class="docs"><p>We can catch any error to perform any recovery</p>
+        (constantly :never-reached))) ; =&gt; ExceptionInfo {:error :booooom}
+  )</pre></td></tr><tr><td class="docs"><p>We can catch error to perform any recovery</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">@(-&gt; (d/success-deferred :starting-nicely)
-     (d/chain (constantly (d/error-deferred :booooom)))
-     (d/catch (fn error-handling [e] {:state :recovered :error e})))</pre></td></tr><tr><td class="docs"><h3>Define executors</h3>
+     (d/chain (constantly (d/error-deferred :booooom))
+              (constantly :never-reached))
+     (d/catch (fn error-handling [e] {:state :recovered :error e}))) ; =&gt; {:state :recovered :error :booooom}</pre></td></tr><tr><td class="docs"><h3>Define executors</h3>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(def executor (fixed-thread-executor 42))</pre></td></tr><tr><td class="docs"><p>Manifold use same thread from which <code>d/deferred</code> is created.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Manifold use same thread-pool from which thread creating <code>d/future</code> is created</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>We can enforce thread pool to use via <code>d/onto</code></p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(-&gt; (read-file-async proj-file)
+    (d/onto executor)
+    (d/chain -&gt;str)
+    )</pre></td></tr><tr><td class="docs"><h2>Manifold Streams</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A <code>s/stream</code> can be seen as a <code>a/channel</code>.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>We can <code>s/put!</code>, <code>s/take!</code> messages until stream is closed via <code>s/close!</code></p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(let [s (s/stream)]
+  (doall (map #(s/put! s %) (range 5)))
+  (s/close! s)
+  (repeatedly 6 #(deref (s/take! s))))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Transducer support</h3>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><em>transducer</em> are really nice to express operation that do not depend on the messaging system.
+We can use same <em>transducer</em> on top of <code>a/channel</code> or <code>s/stream</code></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><code>s/transform</code> apply a <em>transducer</em> to a stream</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Don't</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>When to deref ?</h3>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Deref means waiting for task to finish => we block a thread.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>For example, <code>alpeh</code> response body or <code>aleph.http/post</code>/<code>aleph.http/put</code> can be a <code>s/stream</code>
+=> if we wrap our operation into a <code>s/stream</code> we block no thread to await our workflow to finish</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Usage example</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Reactor: Observable</h2>
 </td><td class="codes"></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_async-programming.core">async-programming.core</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
