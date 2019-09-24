@@ -156,7 +156,6 @@
 ;; No reason not to use it
 
 
-
 ;; ## Manifold
 
 ;; ### Manifold.deferred, Promise and Future
@@ -195,20 +194,12 @@
 ;; `d/chain` allows us to compose operations to define
 ;; workflow/pipeline
 
-(defn ->stream
-  ""
-  [d]
-  (let [s (s/stream)]
-    (s/put! s d)
-    (s/close! s)
-    s))
-
 (defn put-echo
   "PUT data to postman-echo
 
   Response returned in a `manifold.deferred`"
   [s]
-  (http/put "http://postman-echo.com/put" {:body (->stream s)}))
+  (http/put "http://postman-echo.com/put" {:body s}))
 
 ;; We can define our complete pipeline.
 ;; If one of the step return a `manifold.deferred`,
@@ -217,7 +208,7 @@
 @(d/chain (read-file-async proj-file)
           ->str
           clojure.string/upper-case
-          ;; put-echo
+          put-echo
           :status) ; => 200
 
 ;; ### Error handling
@@ -261,49 +252,69 @@
 
 ;; We can `s/put!`, `s/take!` messages until stream is closed via `s/close!`
 
-(let [s (s/stream)]
+(let [s  (s/stream)
+      s' (s/map (comp inc inc) s)]
   (doall (map #(s/put! s %) (range 5)))
   (s/close! s)
-  (repeatedly 6 #(deref (s/take! s))))
-
-;; 
+  (repeatedly 6 #(deref (s/take! s')))) ; => (2 3 4 5 6 nil)
 
 
-;; ### Transducer support
+;; ## Transducer support
 
 ;; *transducer* are really nice to express operation that do not depend on the messaging system.
 ;; We can use same *transducer* on top of `a/channel` or `s/stream`
 
 ;; `s/transform` apply a *transducer* to a stream
 
+;; ## Executors
 
-;; ### Don't
+;; We can define our own executor
+(def executor (fixed-thread-executor 42))
 
-;; ### When to deref ?
+;; We can specify on which executor a pipeline shouls be run
 
-;; Deref means waiting for task to finish => we block a thread.
+@(-> (read-file-async proj-file)
+     (d/chain ->str
+              (fn [s]
+                (println (.getName (Thread/currentThread)))
+                s)
+             (fn [s]
+               (d/future (println (.getName (Thread/currentThread)))
+                         s)))
+    (d/onto executor)) ; => "(defproject ...
 
-;; For example, `alpeh` response body or `aleph.http/post`/`aleph.http/put` can be a `s/stream`
-;; => if we wrap our operation into a `s/stream` we block no thread to await our workflow to finish
+;; Manifold use same thread from which `d/deferred` is created.
+
+;; By default Manifold use same thread-pool from which thread creating `d/future` is created.
+
+;; `aleph` ensure request is handled outside of IO thread pool (does not block `netty`).
+;; It is ran onto dedicated thread pool (configured via `aleph.http.server/start-server`)
+
+;; => `d/deferred`/`d/future` will be handled/created onto this `aleph` thread pool.
+
+
+;; Today in Obwald, we have dedicated thread pools for our HTTP clients (CloudStack, Privnets, Bundes).
+;; As CloudStack operation can be long, it is maybe fine to have dedicated thread pool here. But not really sure of the need for other services.
+
+
+
+;; ## When to deref ?
+
+;; `deref` means waiting for task to finish => we block a thread.
+
+;; As we use `aleph` we should never deref our pipeline
+
+;; `Aleph` response can be a deferred that will be written to client socket once realized.
+;; => no need to deref our pipeline to handle a request
+
+;; Note: `aleph.http/post`/`aleph.http/put` request body/data can be a `s/stream`
+
+
+
+;; ## Don't
+
 
 
 ;; ## Usage example
 
 
-;; ### Define executors
-
-(def executor (fixed-thread-executor 42))
-
-;; Manifold use same thread from which `d/deferred` is created.
-
-;; Manifold use same thread-pool from which thread creating `d/future` is created
-
-;; We can enforce thread pool to use via `d/onto`
-
-(-> (read-file-async proj-file)
-    (d/onto executor)
-    (d/chain ->str)
-    )
-
-
-;; ## Reactor: Observable

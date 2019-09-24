@@ -2984,14 +2984,14 @@ No reason not to use it</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Manifold.deferred, Promise and Future</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p><code>d/deferred</code> can be used as Clojure <code>promise</code> (we can <code>deliver</code> on a <code>d/deferred</code>)
 and <code>d/future</code> is a direct replacement of <code>future</code></p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>We should always use <code>manifold</code> version because <code>promise</code>/<code>future</code> use blocking
-dereference => Manifold allocated thread to treat them as asynchronous deferred.</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(let [p (d/deferred)]
   (deliver p :some-value)
   (deliver p :another-value)
   (repeatedly 2 #(deref p))
-  ) ; =&gt; (:some-value :some-value)</pre></td></tr><tr><td class="docs">
+  ) ; =&gt; (:some-value :some-value)</pre></td></tr><tr><td class="docs"><p>We should always use <code>manifold</code> version because <code>promise</code>/<code>future</code> use blocking
+dereference => Manifold allocated thread to treat them as asynchronous deferred.</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn read-file-async
   [file]
   (let [path    (-&gt; file as-file .toPath)
@@ -3011,25 +3011,19 @@ dereference => Manifold allocated thread to treat them as asynchronous deferred.
 
 <p><code>d/chain</code> allows us to compose operations to define
 workflow/pipeline</p>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn -&gt;stream
-  [d]
-  (let [s (s/stream)]
-    (s/put! s d)
-    (s/close! s)
-    s))</pre></td></tr><tr><td class="docs"><p>PUT data to postman-echo</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>PUT data to postman-echo</p>
 
 <p>  Response returned in a <code>manifold.deferred</code></p>
 </td><td class="codes"><pre class="brush: clojure">(defn put-echo
   [s]
-  (http/put &quot;http://postman-echo.com/put&quot; {:body (-&gt;stream s)}))</pre></td></tr><tr><td class="docs"><p>We can define our complete pipeline.
+  (http/put &quot;http://postman-echo.com/put&quot; {:body s}))</pre></td></tr><tr><td class="docs"><p>We can define our complete pipeline.
 If one of the step return a <code>manifold.deferred</code>,
 <code>manifold.deferred/chain</code> will wait a value is delivered
 before moving to next step</p>
 </td><td class="codes"><pre class="brush: clojure">@(d/chain (read-file-async proj-file)
           -&gt;str
           clojure.string/upper-case
-          ;; put-echo
+          put-echo
           :status) ; =&gt; 200</pre></td></tr><tr><td class="docs"><h3>Error handling</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>A <code>manifold.deferred</code> can represent both success (<code>d/success-deferred</code>) and error (<code>d/error-deferred</code>)
 When derefing a <code>d/error-deferred</code>, an exception will be thrown with associated value</p>
@@ -3054,34 +3048,45 @@ When derefing a <code>d/error-deferred</code>, an exception will be thrown with 
 </td><td class="codes"><pre class="brush: clojure">@(-&gt; (d/success-deferred :starting-nicely)
      (d/chain (constantly (d/error-deferred :booooom))
               (constantly :never-reached))
-     (d/catch (fn error-handling [e] {:state :recovered :error e}))) ; =&gt; {:state :recovered :error :booooom}</pre></td></tr><tr><td class="docs"><h3>Define executors</h3>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(def executor (fixed-thread-executor 42))</pre></td></tr><tr><td class="docs"><p>Manifold use same thread from which <code>d/deferred</code> is created.</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Manifold use same thread-pool from which thread creating <code>d/future</code> is created</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>We can enforce thread pool to use via <code>d/onto</code></p>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(-&gt; (read-file-async proj-file)
-    (d/onto executor)
-    (d/chain -&gt;str)
-    )</pre></td></tr><tr><td class="docs"><h2>Manifold Streams</h2>
+     (d/catch (fn error-handling [e] {:state :recovered :error e}))) ; =&gt; {:state :recovered :error :booooom}</pre></td></tr><tr><td class="docs"><h2>Manifold Streams</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>A <code>s/stream</code> can be seen as a <code>a/channel</code>.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>We can <code>s/put!</code>, <code>s/take!</code> messages until stream is closed via <code>s/close!</code></p>
 </td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(let [s (s/stream)]
+</td><td class="codes"><pre class="brush: clojure">(let [s  (s/stream)
+      s' (s/map (comp inc inc) s)]
   (doall (map #(s/put! s %) (range 5)))
   (s/close! s)
-  (repeatedly 6 #(deref (s/take! s))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"></td></tr><tr><td class="docs"><h3>Transducer support</h3>
+  (repeatedly 6 #(deref (s/take! s')))) ; =&gt; (2 3 4 5 6 nil)</pre></td></tr><tr><td class="docs"><h2>Transducer support</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p><em>transducer</em> are really nice to express operation that do not depend on the messaging system.
 We can use same <em>transducer</em> on top of <code>a/channel</code> or <code>s/stream</code></p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p><code>s/transform</code> apply a <em>transducer</em> to a stream</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><h3>Don't</h3>
-</td><td class="codes"></td></tr><tr><td class="docs"><h3>When to deref ?</h3>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Deref means waiting for task to finish => we block a thread.</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>For example, <code>alpeh</code> response body or <code>aleph.http/post</code>/<code>aleph.http/put</code> can be a <code>s/stream</code>
-=> if we wrap our operation into a <code>s/stream</code> we block no thread to await our workflow to finish</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><h2>Executors</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>We can define our own executor</p>
+</td><td class="codes"><pre class="brush: clojure">(def executor (fixed-thread-executor 42))</pre></td></tr><tr><td class="docs"><p>We can specify on which executor a pipeline shouls be run</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">@(-&gt; (read-file-async proj-file)
+     (d/chain -&gt;str
+              (fn [s]
+                (println (.getName (Thread/currentThread)))
+                s)
+             (fn [s]
+               (d/future (println (.getName (Thread/currentThread)))
+                         s)))
+    (d/onto executor)) ; =&gt; &quot;(defproject ...</pre></td></tr><tr><td class="docs"><p>Manifold use same thread from which <code>d/deferred</code> is created.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>By default Manifold use same thread-pool from which thread creating <code>d/future</code> is created.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><code>aleph</code> ensure request is handled outside of IO thread pool (does not block <code>netty</code>).
+It is ran onto dedicated thread pool (configured via <code>aleph.http.server/start-server</code>)</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>=> <code>d/deferred</code>/<code>d/future</code> will be handled/created onto this <code>aleph</code> thread pool.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Today in Obwald, we have dedicated thread pools for our HTTP clients (CloudStack, Privnets, Bundes).
+As CloudStack operation can be long, it is maybe fine to have dedicated thread pool here. But not really sure of the need for other services.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><h2>When to deref ?</h2>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><code>deref</code> means waiting for task to finish => we block a thread.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>As we use <code>aleph</code> we should never deref our pipeline</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p><code>Aleph</code> response can be a deferred that will be written to client socket once realized.
+=> no need to deref our pipeline to handle a request</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Note: <code>aleph.http/post</code>/<code>aleph.http/put</code> request body/data can be a <code>s/stream</code></p>
+</td><td class="codes"></td></tr><tr><td class="docs"><h2>Don't</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><h2>Usage example</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><h2>Reactor: Observable</h2>
 </td><td class="codes"></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_async-programming.core">async-programming.core</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
 SyntaxHighlighter.all();
 
