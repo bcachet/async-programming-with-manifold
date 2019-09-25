@@ -2,6 +2,7 @@
   (:require [aleph.tcp :as tcp]
             [manifold.deferred :as d]
             [manifold.stream :as s]
+            [manifold.bus :as bus]
             [aleph.netty :as netty]
             [gloss.core :as gloss]
             [gloss.io :as io]
@@ -24,22 +25,40 @@
                       ]
   c/Lifecycle
   (start [this]
-    (let [state (atom {})]
+    (let [b (bus/event-bus)]
       (defmethod handle-cmd :join [{:keys [args]}]
-        (str "JOIN " args))
+        (let [chan-name (clojure.string/lower-case (first args))]
+          {:bus (bus/subscribe b chan-name)}))
 
       (defmethod handle-cmd :quit [{:keys [args]}]
         (str "QUIT " args))
+
+      (defmethod handle-cmd :send [{:keys [args]}]
+        (let [chan-name (clojure.string/lower-case (first args))
+              message (clojure.string/join " " (rest args))]
+          (println "Message: " message)
+          (-> (bus/publish! b chan-name message)
+              (d/chain 
+               (fn [v]
+                 (println "Success? " v)))
+              (d/catch (fn [e]
+                         (println "Error: " e))))
+          ))
 
       (defmethod handle-cmd :default [{:keys [cmd]}]
         (throw (ex-info "Invalid CMD" {:cmd cmd})))
 
       (assoc this :server (tcp/start-server
-                           (fn [s _]
-                             (s/connect (->> (io/decode-stream s protocol)
-                                             (s/map ->cmd)
-                                             (s/map handle-cmd))
-                                        s))
+                           (fn [s info]
+                             (->> (io/decode-stream s protocol)
+                                  (s/map (fn [s]
+                                           (println "Cmd: " s)
+                                           s))
+                                  (s/map ->cmd)
+                                  (s/map handle-cmd)
+                                  (s/map (fn [{:keys [bus]}]
+                                           (when bus
+                                             (s/connect bus s {:timeout 100}))))))
                            {:port port}))))
   (stop [{:keys [server] :as this}]
     (when server
