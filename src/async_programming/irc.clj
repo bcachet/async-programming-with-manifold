@@ -19,46 +19,43 @@
       (update :cmd (comp keyword clojure.string/lower-case))
       (update :args #(clojure.string/split % #" "))))
 
-(defmulti handle-cmd :cmd)
-
 (defrecord IRCServer [port    ; config
-                      ]
+                     ]
   c/Lifecycle
   (start [this]
     (let [b (bus/event-bus)]
-      (defmethod handle-cmd :join [{:keys [args]}]
+      (defn join- [s args]
         (let [chan-name (clojure.string/lower-case (first args))]
-          {:bus (bus/subscribe b chan-name)}))
+          (s/connect (bus/subscribe b chan-name) s {:timeout 100})))
 
-      (defmethod handle-cmd :quit [{:keys [args]}]
+      (defn quit- [args]
         (str "QUIT " args))
 
-      (defmethod handle-cmd :send [{:keys [args]}]
+      (defn send- [args]
         (let [chan-name (clojure.string/lower-case (first args))
-              message (clojure.string/join " " (rest args))]
+              message   (clojure.string/join " " (rest args))]
           (println "Message: " message)
           (-> (bus/publish! b chan-name message)
-              (d/chain 
+              (d/chain
                (fn [v]
                  (println "Success? " v)))
               (d/catch (fn [e]
-                         (println "Error: " e))))
-          ))
+                         (println "Error: " e))))))
 
-      (defmethod handle-cmd :default [{:keys [cmd]}]
-        (throw (ex-info "Invalid CMD" {:cmd cmd})))
+      (defn handle-cmd [s {:keys [cmd args] :as c}]
+        (println "Cmd: " c)
+        (case cmd
+          :join (join- s args)
+          :send (send- args)
+          :quit (quit- args)
+          (throw (ex-info "Invalid CMD" {:cmd cmd}))))
 
       (assoc this :server (tcp/start-server
                            (fn [s info]
                              (->> (io/decode-stream s protocol)
-                                  (s/map (fn [s]
-                                           (println "Cmd: " s)
-                                           s))
                                   (s/map ->cmd)
-                                  (s/map handle-cmd)
-                                  (s/map (fn [{:keys [bus]}]
-                                           (when bus
-                                             (s/connect bus s {:timeout 100}))))))
+                                  (s/map (partial handle-cmd s))
+                                  ))
                            {:port port}))))
   (stop [{:keys [server] :as this}]
     (when server
