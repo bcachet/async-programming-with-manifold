@@ -274,14 +274,17 @@
 ;; We can specify on which executor a pipeline shouls be run
 
 @(-> (read-file-async proj-file)
+     (d/onto executor)
      (d/chain ->str
               (fn [s]
-                (println (.getName (Thread/currentThread)))
+                (println "Deferred: " (.getName (Thread/currentThread)))
                 s)
              (fn [s]
-               (d/future (println (.getName (Thread/currentThread)))
+               (d/future (println "Future: " (.getName (Thread/currentThread)))
                          s)))
-    (d/onto executor)) ; => "(defproject ...
+     ) ; => "(defproject ...
+
+(.getName (Thread/currentThread))
 
 ;; Manifold use same thread from which `d/deferred` is created.
 

@@ -9,7 +9,8 @@
   (do
     (def r1 (d/deferred))
     (d/success! r1 :foo)
-    @r1)
+    @r1
+    )
   )
 
 
@@ -31,7 +32,7 @@
 (comment
   (do
     (def r4 (d/future (Thread/sleep 2000) :foo))
-    (def r5 (d/future (Thread/sleep 2000) :bar))
+    (def r5 (d/future (Thread/sleep 1000) :bar))
 
     (time
      @(d/zip r4 r5)))
@@ -40,7 +41,7 @@
 (defn slow-value
   [value]
   (d/future
-    (Thread/sleep 4000)
+    (Thread/sleep 2000)
     value))
 
 (comment
@@ -92,8 +93,11 @@
 (comment
 
   (def s (s/stream 10 (map inc)))
+
   (s/put! s 0)
+
   @(s/take! s)
+  
   )
 
 (comment
@@ -105,6 +109,8 @@
      :body (s/periodically 1000 (constantly "hello\n"))})
 
 
-  (http/start-server handler {:port 8080})
+  (def s (http/start-server handler {:port 8080}))
+
+  (.close s)
 
   )

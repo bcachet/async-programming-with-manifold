@@ -3065,14 +3065,16 @@ We can use same <em>transducer</em> on top of <code>a/channel</code> or <code>s/
 </td><td class="codes"><pre class="brush: clojure">(def executor (fixed-thread-executor 42))</pre></td></tr><tr><td class="docs"><p>We can specify on which executor a pipeline shouls be run</p>
 </td><td class="codes"></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">@(-&gt; (read-file-async proj-file)
+     (d/onto executor)
      (d/chain -&gt;str
               (fn [s]
-                (println (.getName (Thread/currentThread)))
+                (println &quot;Deferred: &quot; (.getName (Thread/currentThread)))
                 s)
              (fn [s]
-               (d/future (println (.getName (Thread/currentThread)))
+               (d/future (println &quot;Future: &quot; (.getName (Thread/currentThread)))
                          s)))
-    (d/onto executor)) ; =&gt; &quot;(defproject ...</pre></td></tr><tr><td class="docs"><p>Manifold use same thread from which <code>d/deferred</code> is created.</p>
+     ) ; =&gt; &quot;(defproject ...</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(.getName (Thread/currentThread))</pre></td></tr><tr><td class="docs"><p>Manifold use same thread from which <code>d/deferred</code> is created.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>By default Manifold use same thread-pool from which thread creating <code>d/future</code> is created.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p><code>aleph</code> ensure request is handled outside of IO thread pool (does not block <code>netty</code>).
 It is ran onto dedicated thread pool (configured via <code>aleph.http.server/start-server</code>)</p>
@@ -3110,13 +3112,13 @@ As CloudStack operation can be long, it is maybe fine to have dedicated thread p
 </td><td class="codes"><pre class="brush: clojure">(comment
   (do
     (def r4 (d/future (Thread/sleep 2000) :foo))
-    (def r5 (d/future (Thread/sleep 2000) :bar))
+    (def r5 (d/future (Thread/sleep 1000) :bar))
     (time
      @(d/zip r4 r5))))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn slow-value
   [value]
   (d/future
-    (Thread/sleep 4000)
+    (Thread/sleep 2000)
     value))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(comment
 
@@ -3160,7 +3162,8 @@ As CloudStack operation can be long, it is maybe fine to have dedicated thread p
     {:status 200
      :content-type &quot;text/plain&quot;
      :body (s/periodically 1000 (constantly &quot;hello\n&quot;))})
-  (http/start-server handler {:port 8080}))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#async-programming.irc" name="async-programming.irc"><h1 class="project-name">async-programming.irc</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
+  (def s (http/start-server handler {:port 8080}))
+  (.close s))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#async-programming.irc" name="async-programming.irc"><h1 class="project-name">async-programming.irc</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns async-programming.irc
   (:require [aleph.tcp :as tcp]
             [manifold.deferred :as d]

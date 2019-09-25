@@ -19,19 +19,21 @@
       (update :cmd (comp keyword clojure.string/lower-case))
       (update :args #(clojure.string/split % #" "))))
 
+(defmulti handle-cmd :cmd)
+
 (defrecord IRCServer [port    ; config
                      ]
   c/Lifecycle
   (start [this]
     (let [b (bus/event-bus)]
-      (defn join- [s args]
+      (defmethod handle-cmd :join [{:keys [args stream]}]
         (let [chan-name (clojure.string/lower-case (first args))]
-          (s/connect (bus/subscribe b chan-name) s {:timeout 100})))
+          (s/connect (bus/subscribe b chan-name) stream {:timeout 100})))
 
-      (defn quit- [args]
+      (defmethod handle-cmd :quit [{:keys [args]}]
         (str "QUIT " args))
 
-      (defn send- [args]
+      (defmethod handle-cmd :send [{:keys [args]}]
         (let [chan-name (clojure.string/lower-case (first args))
               message   (clojure.string/join " " (rest args))]
           (println "Message: " message)
@@ -40,22 +42,16 @@
                (fn [v]
                  (println "Success? " v)))
               (d/catch (fn [e]
-                         (println "Error: " e))))))
-
-      (defn handle-cmd [s {:keys [cmd args] :as c}]
-        (println "Cmd: " c)
-        (case cmd
-          :join (join- s args)
-          :send (send- args)
-          :quit (quit- args)
-          (throw (ex-info "Invalid CMD" {:cmd cmd}))))
+                         (println "Error: " e))))
+          nil))
 
       (assoc this :server (tcp/start-server
                            (fn [s info]
-                             (->> (io/decode-stream s protocol)
-                                  (s/map ->cmd)
-                                  (s/map (partial handle-cmd s))
-                                  ))
+                             (s/consume (fn [line]
+                                          (when-let [bus (-> line
+                                                             ->cmd
+                                                             (assoc :stream s)
+                                                             handle-cmd)])) (io/decode-stream s protocol)))
                            {:port port}))))
   (stop [{:keys [server] :as this}]
     (when server
